@@ -1,0 +1,10 @@
+package-name: mask-lang/phantom
+description: A friendly package manager for the Mask programming language
+version: 0.1.0
+license: BSD-3.0
+author:
+  - name: Timo Sarkar
+  - email: sartimo10@gmail.com
+
+dependencies:
+  - mask-lang/utils
