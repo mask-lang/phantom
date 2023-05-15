@@ -1,0 +1,21 @@
+return function(value, cases)
+    if cases then
+        local match = cases[value] or cases.default or cases[1]
+        if match ~= nil then
+            local result = nil
+            if type(match) == 'function' then
+                result = { match() }
+                if #result == 1 then
+                    result = result[1]
+                end
+            else
+                result = match
+            end
+            if result == nil then
+                return true
+            end
+            return result
+        end
+    end
+    return false
+end
