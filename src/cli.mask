@@ -1,0 +1,294 @@
+--[[ Command line interface wrapper ]]
+return {
+    name = 'Program', -- name of the running program
+    executable = 'program', -- path to the running program
+    version = '1.0', -- version of the running program
+
+    args = {}, -- this gets overwritten
+    --[[
+        It is advised to overwrite 'help', 'commands' and 'options' tables later in the code, eg.:
+        local CLI = require 'CLI'
+        CLI.options = ...
+        CLI.help = ...
+        CLI.commands = ...
+    ]]
+
+    --[[ Help structure: {
+        'print line one by one to standard output',
+        "if it's a string",
+        function()
+            return "or print returned result if it's a function"
+        end,
+        ':)',
+        CLI.printOptions
+    } ]]
+    help = {},
+
+    --[[ Command structure: {
+        help = { 'You have to actually add help function to the list, it you want it to appear in printed help message.', function()
+            CLI:printHelp()
+        end },
+        command1 = { 'No parameters example', function()
+            -- Do things...
+        end },
+        command2 = { 'Fixed amount of parameters', function(arg1, arg2)
+            -- Do things with arg1 and arg2...
+        end },
+        command3 = { 'Variable amount of parameters', function(...)
+            local args = {...}
+            -- Do things with args...
+        end }
+    } ]]
+    commands = {},
+
+    --[[ Options can only be simple types = string / number / boolean
+        Other types may work, but are not supported by default.
+        Options structure: {
+            string_option = {
+                description = 'Some description...',
+                alias = 's',
+                default = 'Default string value'
+            },
+            number_option = {
+                description = 'This one gets value of 1 if no number parameter is provided. Eg. "--number_option --other_option asd" results in number_option=1 and other_option="asd"',
+                alias = 'n',
+                default = 0 -- this is the default value if no such parameter is specified
+            },
+            boolean_option = {
+                description = 'Same situation as in number_option.\n\t\tAlso this is an example of multiline option description',
+                alias = 'b',
+                default = true
+            }
+        }
+    ]]
+    options = {},
+
+    init = function(self)
+        self:parse(arg or _G.arg or {})
+    end,
+
+    getDefault = function(self, option)
+        if self.options[option] then
+            if type(self.options[option].default) == 'string' then
+                if #self.options[option].default > 0 then
+                    return self.options[option].default
+                end
+            else
+                return self.options[option].default
+            end
+        end
+    end,
+
+    getOption = function(self, option)
+        if self.options[option] then
+            local result = self.options[option].value or self:getDefault(option)
+            if type(result) == 'string' then
+                if #result > 0 then
+                    return result
+                end
+            else
+                return result
+            end
+        end
+    end,
+
+    --[[ Command line arguments and options parsing ]]
+    _input = {},
+    parse = function(self, input)
+        if input[0] ~= nil then
+            self.executable = input[0]
+        end
+        self._input = input
+        local i = 1
+        while i <= #self._input do
+            if self._input[i]:sub(1,2) == '--' then
+                i = i + self:_parseOption(i, self._input[i]:sub(3))
+            elseif self._input[i]:sub(1,1) == '-' then
+                i = i + self:_parseOption(i, self._input[i]:sub(2))
+            else
+                table.insert(self.args, self._input[i])
+            end
+            i = i + 1
+        end
+        self._input = nil
+    end,
+
+    --[[ Helper functions ]]
+    _parseOption = function(self, i, option)
+        local offset = 0
+        if self.options[option] ~= nil then
+            self.options[option].value, offset = self:_getValueAndOffset(i, type(self.options[option].default))
+        else
+            for opt,data in pairs(self.options) do
+                if data.alias == option then
+                    self.options[opt].value, offset = self:_getValueAndOffset(i, type(self.options[opt].default))
+                    break
+                end
+            end
+        end
+        return offset
+    end,
+    _getValueAndOffset = function(self, i, option_type)
+        if option_type == 'string' then
+            return self._input[i+1], 1
+        elseif option_type == 'number' then
+            if not self._input[i+1]:match('%d+') then
+                return 1, 0
+            end
+            return tonumber(self._input[i+1]), 1
+        elseif option_type == 'boolean' then
+            return true, 0
+        end
+        return nil, 0
+    end,
+
+    --[[ CLI input handling ]]
+    input = function(self, message, default)
+        if type(message) == 'string' then
+            io.write(message .. ' ')
+            if default ~= nil then
+                io.write('[' .. tostring(default) .. '] ')
+            end
+        end
+        io.flush()
+        local input = io.read()
+        if #input < 1 then
+            return default
+        end
+        if type(default) == 'boolean' then
+            return input:lower():match('true')
+        elseif type(default) == 'number' then
+            return tonumber(input)
+        end
+        return input
+    end,
+
+    --[[ Choice input ]]
+    choice = function(self, message, choices, default)
+        if type(default) == 'number' then
+            default = choices[default]
+        end
+        local message_default = table.concat(choices, '|'):gsub('(|?)('.. tostring(default) ..')(|?)', '%1' .. tostring(default):upper() .. '%3')
+        local input = nil
+        while input == nil do
+            input = self:input(message, message_default)
+            if input == message_default then
+                input = default
+            else
+                if type(input) == 'string' then
+                    if input:match('^%d+$') then
+                        input = tonumber(input)
+                    else
+                        for index, choice in ipairs(choices) do
+                            if input:match('^' .. choice .. '$') then
+                                input = index
+                                break
+                            end
+                        end
+                    end
+                    if type(input) ~= 'number' then
+                        input = nil
+                    end
+                end
+            end
+            if type(input) == 'number' and (input < 1 or input > #choices) then
+                input = nil
+            end
+        end
+        if type(input) == 'number' then
+            return choices[input]
+        end
+        return input
+    end,
+
+    confirm = function(self, message, default)
+        if type(default) == 'boolean' then
+            default = default and 'y' or 'n'
+        else
+            default = nil
+        end
+        return self:choice(message, {'y', 'n'}, default) == 'y'
+    end,
+
+    -- Try execute command
+    issueCommand = function(self, command)
+        local exec = switch(command, self.commands)
+        if type(exec) == 'table' then
+            exec = exec[2]
+            local num_args = debug.f_num_args(exec)
+            if (#self.args >= num_args) then
+                exec(unpack(self.args))
+            else
+                error('Bad number of arguments!\nExpected ' .. num_args .. ' ' .. (num_args == 1 and 'argument' or 'arguments') .. ' for command: ' .. command)
+            end
+        else
+            io.write('Unknown command: ' .. command .. '\n\n')
+            self:printHelp()
+        end
+    end,
+
+    printVersion = function(self)
+        io.write(tostring(self.name) .. ' v'.. tostring(self.version) .. '\n')
+    end,
+
+    printCommands = function(self)
+        local result = {}
+        local longest = 0
+        for command, data in spairs(self.commands) do
+            if #command > longest then
+                longest = #command
+            end
+        end
+        longest = longest + 4
+        for command, data in spairs(self.commands) do
+            local indent = ''
+            for i=0,(longest-#command) do
+                indent = indent .. ' '
+            end
+            table.insert(result, '    ' .. command .. indent .. tostring(data[1]))
+        end
+        return '\n' .. table.concat(result, '\n')
+    end,
+
+    printOptions = function(self)
+        local result = {}
+        local longest = 0
+        for option, data in spairs(self.options) do
+            local length = #option
+            if data.alias then
+                length = length + 2 + #data.alias
+            end
+            if length > longest then
+                longest = length
+            end
+        end
+        longest = longest + 5
+        for option, data in spairs(self.options) do
+            local text = '--' .. option
+            if data.alias then
+                text = text .. ', -' .. data.alias
+            end
+            for i=0,(longest-#text) do
+                text = text .. ' '
+            end
+            local indent = '    '
+            for i=0,longest do
+                indent = indent .. ' '
+            end
+            table.insert(result, '\n    ' .. text .. data.description:gsub('\t', indent) .. '\n' .. indent .. 'type: ' .. type(data.default) .. '\tdefault: ' .. tostring(data.default))
+        end
+        return table.concat(result, '\n')
+    end,
+
+    printHelp = function(self)
+        self:printVersion()
+        if self.help then
+            for _,line in ipairs(self.help) do
+                if type(line) == 'function' then
+                    line = line(self)
+                end
+                io.write(tostring(line):gsub('%%EXEC%%', self.executable) .. '\n')
+            end
+        end
+    end,
+}
