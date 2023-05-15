@@ -1,0 +1,21 @@
+return function(tab)
+    if type(tab) ~= 'table' then
+        tab = {}
+    end
+
+    local keys = {}
+    for key in pairs(tab) do
+        keys[#keys+1] = key
+    end
+    table.sort(keys)
+
+    local index = 0
+    return function()
+        while index <= #keys do
+            index = index + 1
+            if tab[ keys[index] ] then
+                return keys[index], tab[ keys[index] ]
+            end
+        end
+    end
+end
