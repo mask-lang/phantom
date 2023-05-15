@@ -1,0 +1,101 @@
+--[[ YAML string parsing/dumping ]]
+
+local YAML = {
+    default_indent = '  '
+}
+
+--[[ Parsing simple YAML string
+Main rules:
+- line should match following format "{default_indent}{key}: {value}"
+- arrays are only allowed in the following format: "
+{default_indent}{key}:
+{default_indent}{default_indent}- {key}: {value}
+{default_indent}{default_indent}- {key1}: {value1}
+{default_indent}{default_indent}{default_indent}{key2}: {value2}
+"]]
+function YAML.parse(yaml, offset, indent)
+    local result = {}
+    local lines_read = counter()
+    if yaml then
+        if type(yaml) == 'string' then
+            local new_yaml = {}
+            for line in yaml:gmatch("([^\n]*)\n?") do
+                table.insert(new_yaml, line)
+            end
+            yaml = new_yaml
+        end
+
+        offset = counter(offset or 1)
+        indent = indent or 0
+        local indent_str = ''
+        for i = 1,indent do
+            indent_str = indent_str .. YAML.default_indent
+        end
+
+        while offset() <= #yaml do
+            local line = yaml[offset()]
+            offset(1)
+            if line and #line > 0 then
+                if line:match('^' .. indent_str:gsub('%s', '%%s') .. '%S') == nil then
+                    break
+                elseif line:match('^%s*-') then
+                    yaml[offset() - 1] = line:gsub('^(%s*)-','%1 ')
+                    local lr = 0
+                    value, lr = YAML.parse(yaml, offset() - 1, indent + 1)
+                    table.insert(result, value)
+                    lines_read(lr)
+                    offset(lr - 1)
+                else
+                    local key = line:match('%s*(.+)%s*:%s*')
+                    if key then
+                        local value = line:match(':%s+(.+)$')
+                        if not value then
+                            local lr = 0
+                            value, lr = YAML.parse(yaml, offset(), indent + 1)
+                            lines_read(lr)
+                            offset(lr)
+                        else
+                            value = value:gsub('^[\'"](.+)[\'"]$', '%1')
+                            lines_read(1)
+                            -- try parse value
+                            if value:lower():match('true') == 'true' then
+                                value = true
+                            elseif value:lower():match('false') == 'false' then
+                                value = false
+                            elseif tonumber(value) ~= nil then
+                                value = tonumber(value)
+                            end
+                        end
+                        result[key] = value
+                    else
+                        table.insert(result, line)
+                    end
+                end
+            end
+        end
+    end
+    return result, lines_read()
+end
+
+--[[ Dumping variable contents to YAML string ]]
+function YAML.dump(variable, dump_order, indent)
+    indent = indent or ''
+    local result = ''
+    if type(variable) == 'table' then
+        for k,v in opairs(variable, dump_order or {}) do
+            if type(k) == 'number' then
+                result = result .. '\n' .. indent .. YAML.dump(v, {}, indent .. YAML.default_indent):gsub('^%s+', '- ')
+            else
+                result = result .. '\n' .. indent .. k .. ': ' .. YAML.dump(v, {}, indent .. YAML.default_indent)
+            end
+        end
+    else
+        result = result .. tostring(variable)
+    end
+    if indent ~= '' then
+        return result
+    end
+    return result:sub(2)
+end
+
+return YAML
