@@ -1,0 +1,42 @@
+--[[ File handling ]]
+return {
+    exists = function(path)
+        local f = io.open(path, "rb")
+        if f then
+            f:close()
+        end
+        return f ~= nil
+    end,
+    open = function(...)
+        local f = io.open(...)
+        return f
+    end,
+    close = function(f)
+        if f then
+            f:flush()
+            f:close()
+            io.output(io.stdout)
+        end
+    end,
+    get_contents = function(path)
+        local f = io.open(path, "rb")
+        if f then
+            local contents = f:read("*a")
+            f:close()
+            return contents
+        end
+        return nil
+    end,
+    get_lines = function(path)
+        local f = io.open(path, "rb")
+        if f then
+            f:close()
+            local lines = {}
+            for line in io.lines(path) do
+                lines[#lines + 1] = line:gsub('\r', '')
+            end
+            return lines
+        end
+        return nil
+    end,
+}
