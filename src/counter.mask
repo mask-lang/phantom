@@ -1,0 +1,9 @@
+return function(initial)
+    local count = initial or 0
+    return function(amount)
+        if type(amount) == 'number' then
+            count = count + amount
+        end
+        return count
+    end
+end
